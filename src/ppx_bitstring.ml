@@ -17,7 +17,6 @@
 open Ast_helper
 open Ast_mapper
 open Asttypes
-open Core.Std
 open Format
 open Lexing
 open Longident
@@ -111,14 +110,10 @@ let mkident name =
 let rec process_loc ~loc expr =
   match expr with
   | { pexp_desc = Pexp_tuple(ops) } ->
-    let fld = List.fold
-        ~init:[]
-        ~f:(fun acc exp -> acc @ [ process_loc ~loc exp ]) ops
+    let fld = List.fold_left (fun acc exp -> acc @ [ process_loc ~loc exp ]) [] ops
     in { expr with pexp_desc = Pexp_tuple(fld); pexp_loc = loc }
   | { pexp_desc = Pexp_apply(ident, ops) } ->
-    let fld = List.fold
-        ~init:[]
-        ~f:(fun acc (lbl, exp) -> acc @ [ (lbl, (process_loc ~loc exp)) ]) ops
+    let fld = List.fold_left (fun acc (lbl, exp) -> acc @ [ (lbl, (process_loc ~loc exp)) ]) [] ops
     in { expr with pexp_desc = Pexp_apply(ident, fld); pexp_loc = loc }
   | _ -> { expr with pexp_loc = loc }
 
@@ -278,11 +273,17 @@ let rec evaluate_expr = function
 
 (* Parsing fields *)
 
+let rec string_split ?on:(on=':') s =
+	try
+		let i = String.index s on in
+		(String.sub s 0 i)::(string_split ~on (String.sub s (i+1) (String.length s -i - 1)))
+	with | Not_found -> [s]
+
 let parse_match_fields ~loc str =
   let e = List.fold_right
-      ~init:[]
-      ~f:(fun e acc -> [StdLabels.Bytes.trim e] @ acc)
-      (String.split ~on:':' str)
+      (fun e acc -> [StdLabels.Bytes.trim e] @ acc)
+      (string_split str)
+	  []
   in match e with
   | [ "_" as pat ] ->
     (parse_pattern ~loc pat, None, None)
@@ -296,9 +297,9 @@ let parse_match_fields ~loc str =
 
 let parse_const_fields ~loc str =
   let e = List.fold_right
-      ~init:[]
-      ~f:(fun e acc -> [StdLabels.Bytes.trim e] @ acc)
-      (String.split ~on:':' str)
+      (fun e acc -> [StdLabels.Bytes.trim e] @ acc)
+      (string_split str)
+	  []
   in match e with
   | [ vl; len ] ->
     let q = Some Qualifiers.default in
@@ -311,19 +312,18 @@ let parse_const_fields ~loc str =
 (* Match generators *)
 
 let check_field_len ~loc (l, q) =
-  let open Option.Monad_infix in
   match q.Qualifiers.value_type with
   | Some (Type.String) ->
-    evaluate_expr l >>= fun v ->
+    evaluate_expr l |> fun (Some v) ->
     if v < -1 || (v > 0 && (v mod 8) <> 0) then
       location_exn ~loc "length of string must be > 0 and multiple of 8, or the special value -1"
     else Some v
   | Some (Type.Bitstring) ->
-    evaluate_expr l >>= fun v ->
+    evaluate_expr l |> fun (Some v) ->
     if v < -1 then location_exn ~loc "length of bitstring must be >= 0 or the special value -1"
     else Some v
   | Some (Type.Int) ->
-    evaluate_expr l >>= fun v ->
+    evaluate_expr l |> fun (Some v) ->
     if v < 1 || v > 64 then location_exn ~loc "length of int field must be [1..64]"
     else Some v
   | None -> location_exn ~loc "No type to check"
@@ -503,8 +503,8 @@ let gen_case org_off res (dat, off, len) case =
   | Ppat_constant (Const_string (value, _)) ->
     let beh = [%expr [%e (mkident res)] := Some ([%e case.pc_rhs]); raise Exit]
     in List.map
-      ~f:(fun flds -> parse_match_fields ~loc flds)
-      (String.split ~on:';' value)
+      (fun flds -> parse_match_fields ~loc flds)
+      (string_split ~on:';' value)
     |> gen_fields ~loc org_off (dat, off, len) beh
   | _ -> location_exn ~loc "Wrong pattern type in bitmatch case"
 
@@ -514,9 +514,9 @@ let gen_cases ident loc cases =
   let offNN = mksym "off" and lenNN = mksym "len" in
   let offN = mksym "off" and lenN = mksym "len" in
   let algN = mksym "aligned" and resN = mksym "result" in
-  let stmts = List.fold
-      ~init:[]
-      ~f:(fun acc case -> acc @ [ gen_case offN resN (datN, offNN, lenNN) case ])
+  let stmts = List.fold_left
+      (fun acc case -> acc @ [ gen_case offN resN (datN, offNN, lenNN) case ])
+	   []
       cases
   in
   let rec build_seq = function
@@ -642,9 +642,10 @@ let gen_assignment_behavior loc sym fields =
              then _res else raise Exit]
   in
   let exprs = List.fold_right
-      ~f:(fun fld acc -> [ (gen_constructor loc sym fld) ] @ acc)
-      ~init:[post]
-      fields in
+      (fun fld acc -> [ (gen_constructor loc sym fld) ] @ acc)
+	  fields
+      [post]
+	  in
   let seq = (Ast_convenience.sequence exprs) in
   let ecl = Ast_convenience.evar "Bitstring.Buffer.create" in
   let ini = Ast_convenience.app ecl [ (Ast_convenience.unit ()) ] in
@@ -655,8 +656,8 @@ let parse_assignment_behavior loc sym expr =
   match expr with
   | Pexp_constant (Const_string (value, _)) ->
     List.map
-      ~f:(fun flds -> parse_const_fields ~loc flds)
-      (String.split ~on:';' value)
+      (fun flds -> parse_const_fields ~loc flds)
+      (string_split ~on:';' value)
     |> gen_assignment_behavior loc sym
   | _ -> location_exn ~loc "Wrong pattern type in bitmatch constructor"
 
