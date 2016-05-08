@@ -12,7 +12,7 @@ The PPX extension is called `ppx_bitstring.ext`. It should be used as follows:
 
 ```bash
 $ opam pin add -k git ppx_bitstring https://github.com/xguerin/ppx_bitstring
-$ ocamlfind ocamlopt -linkpkg -thread -package core,bitstring,ppx_bitstring.ext main.ml -o main.native
+$ ocamlfind ocamlopt -linkpkg -thread -package bitstring,ppx_bitstring.ext main.ml -o main.native
 ```
 
 ## Syntax
@@ -54,7 +54,7 @@ ocamlc -dparsetree foo.ml
 To see the output of a development version of the extension:
 
 ```bash
-ocamlfind opt -package bitstring,core -thread -dsource -ppx ./ppx_bitstring.ext foo.ml
+ocamlfind opt -package bitstring -thread -dsource -ppx ./ppx_bitstring.ext foo.ml
 ```
 
 ## License
