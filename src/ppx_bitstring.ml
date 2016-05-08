@@ -595,6 +595,12 @@ let gen_constructor loc sym = function
             let ex = sprintf "Bitstring.construct_%s_%s_%s" tp en sn in
             Ast_convenience.app (Ast_convenience.evar ex)
               [ (Ast_convenience.evar sym); l; (Ast_convenience.int size); exc ]
+          | None, Some (sign), Some (endian) ->
+            let en = Endian.to_string endian in
+            let sn = Sign.to_string sign in
+            let ex = sprintf "Bitstring.construct_int%d_%s_%s" 64 en sn in
+            Ast_convenience.app (Ast_convenience.evar ex)
+              [ (Ast_convenience.evar sym); l; s; exc ]
           (* Invalid type *)
           | _, _, _ ->
             raise (location_exn ~loc "Invalid type")
